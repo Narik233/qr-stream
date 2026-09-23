@@ -1,12 +1,24 @@
 # QR-Stream
 
 Dateien rein optisch vom PC aufs Handy übertragen – ohne Netzwerk, ohne App.
-Der PC zeigt wechselnde QR-Codes (1, 2 oder 4 gleichzeitig), das Handy filmt sie
-mit der Kamera und setzt die Datei wieder zusammen.
+Der PC zeigt wechselnde Codes, das Handy filmt sie mit der Kamera und setzt die Datei wieder zusammen.
+
+Zwei Verfahren, oben auf jeder Seite umschaltbar:
+
+| | QR-Codes | cimbar |
+|---|---|---|
+| Format | 1, 2 oder 4 Standard-QR-Codes | Farbiger Spezialcode ([libcimbar](https://github.com/sz3/libcimbar)) |
+| Tempo | niedriger (geschätzt 5–15 KB/s, nicht gemessen) | deutlich höher (Autor: ~106 KB/s mit Android-App, Browser langsamer) |
+| Robustheit | sehr robust, schwarz-weiß | empfindlicher für Farbstich, Spiegelungen, schwache Kameras |
+| Browser | alle modernen | Empfänger braucht WebCodecs (aktuelle Chrome/Safari), Sender WebGL |
+| Offline | Einzeldateien, laufen auch per Doppelklick | braucht http(s) (Worker + WASM) |
 
 **Online:**
-- Empfänger (Handy): https://narik233.github.io/qr-stream/
-- Sender (PC): https://narik233.github.io/qr-stream/sender.html
+
+| | QR-Codes | cimbar |
+|---|---|---|
+| Handy (Empfänger) | https://narik233.github.io/qr-stream/ | https://narik233.github.io/qr-stream/cimbar/ |
+| PC (Sender) | https://narik233.github.io/qr-stream/sender.html | https://narik233.github.io/qr-stream/cimbar/sender.html |
 
 ## Benutzung
 
@@ -37,13 +49,26 @@ Die Seite ist eine einzige Datei ohne externe Abhängigkeiten.
 | Robust / Normal / Dicht | 300 / 500 / 800 Byte pro Code |
 | Wechsel pro Sekunde | Wenn das Handy nicht mitkommt (Codes/s beim Empfänger deutlich unter Sender-Rate): reduzieren |
 
+## cimbar-Modus
+
+`vendor/cimbar/` enthält die **unveränderten** Dateien aus dem libcimbar-Release v0.6.8
+(MPL-2.0, Herkunft und Prüfsummen in `vendor/cimbar/README.md`). Die deutschen Seiten
+`src/cimbar-sender.html` und `src/cimbar-receiver.html` binden sie ein und passen nur von außen an:
+
+- eigene Skalierung ohne Drehung (sonst wird Modus Bm in schmalen Bereichen verzerrt)
+- Datei wird komplett gelesen und synchron kodiert (sonst vermischen sich schnell nacheinander gewählte Dateien)
+- Empfänger zeigt „Speichern/Teilen“ statt automatischem Download und fällt nach Moduswechsel auf Auto-Erkennung zurück
+- Service Worker von libcimbar werden nicht genutzt (absolute Pfade passen nicht unter /qr-stream/)
+
 ## Entwicklung
 
 ```
 npm install
-npm test        # Codec, Fountain-Code, QR-Erzeugung/-Erkennung, 4-Code-Erkennung
-npm run build   # erzeugt dist/sender.html, dist/receiver.html, dist/index.html
+npm test           # Codec, Fountain-Code, QR-Erzeugung/-Erkennung, 4-Code-Erkennung
+npm run build      # dist/ (QR-Seiten als Einzeldateien, dist/cimbar/ mit libcimbar)
+npm run test:e2e   # headless Chrome: echte Sender-Bilder -> echter Empfänger, Datei bitgenau prüfen
 ```
 
-`test/e2e.html` (über einen lokalen Webserver öffnen) speist die echten Sender-Bilder
-simuliert als Kamerabild in den Empfänger ein und prüft die Datei bitgenau.
+Die E2E-Tests (`test/e2e.html`, `test/cimbar-e2e.html`) speisen die vom Sender gezeichneten Bilder
+statt einer Kamera in den Empfänger ein – das prüft die komplette Kette, ersetzt aber keinen Test
+mit echter Handykamera.

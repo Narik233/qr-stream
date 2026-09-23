@@ -15,6 +15,7 @@ html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   display:grid;grid-template-columns:320px 1fr;min-height:100vh}
 aside{padding:20px;display:flex;flex-direction:column;gap:16px;border-right:1px solid var(--border);overflow:auto}
+aside>*{flex-shrink:0}
 h1{font-size:20px;margin:0}
 .sub{color:var(--muted);margin:2px 0 0}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
@@ -40,6 +41,10 @@ input[type=range]{width:100%}
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
 .stats b{display:block;font-size:16px}
 .hint{font-size:12px;color:var(--muted);margin:0}
+.switch{display:flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--card)}
+.switch a{flex:1;text-align:center;padding:8px 0;color:var(--text);text-decoration:none;font-weight:500}
+.switch a+a{border-left:1px solid var(--border)}
+.switch a.on{background:var(--accent);color:var(--accent-text);font-weight:600}
 main{position:relative;display:grid;place-items:center;background:#fff;overflow:hidden}
 #stage{position:absolute;inset:0;display:grid;place-items:center}
 canvas{image-rendering:pixelated}
@@ -53,6 +58,10 @@ canvas{image-rendering:pixelated}
     <h1>QR-Stream</h1>
     <p class="sub">Dateien optisch aufs Handy übertragen.</p>
   </div>
+
+  <nav class="switch" aria-label="Verfahren">
+    <a class="on" href="./sender.html">QR-Codes</a><a href="./cimbar/sender.html">cimbar (schnell)</a>
+  </nav>
 
   <section class="card">
     <h2>Datei</h2>
@@ -92,6 +101,8 @@ canvas{image-rendering:pixelated}
   </div>
   <p class="hint">Auf dem Handy die Empfänger-Seite öffnen und die Codes filmen, bis die Datei fertig ist.
     Einzelne verpasste Codes sind egal. Leertaste: Start/Pause.</p>
+  <p class="hint"><b>Achtung Lichtempfindlichkeit:</b> Die Codes wechseln schnell. Bei fotosensitiver Epilepsie
+    nicht auf den Bildschirm schauen.</p>
 </aside>
 
 <main id="main">

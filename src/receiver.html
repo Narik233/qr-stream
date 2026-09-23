@@ -24,6 +24,10 @@ h1{font-size:22px;margin:0}
 ol{margin:0;padding-left:20px;color:var(--muted)}
 ol li{margin:4px 0}
 .err{color:var(--err)} .ok{color:var(--ok)}
+.switch{display:flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--card);margin-bottom:14px}
+.switch a{flex:1;text-align:center;padding:8px 0;color:var(--text);text-decoration:none;font-weight:500}
+.switch a+a{border-left:1px solid var(--border)}
+.switch a.on{background:var(--accent);color:var(--accent-text);font-weight:600}
 .video{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:3/4;margin-bottom:14px}
 video{width:100%;height:100%;object-fit:cover;display:block}
 .frame{position:absolute;inset:8%;border:2px solid rgba(255,255,255,.55);border-radius:12px;pointer-events:none;transition:border-color .1s}
@@ -45,6 +49,9 @@ pre.preview{background:var(--bg);padding:10px;font-size:12px;white-space:pre-wra
 <main>
   <h1>QR-Stream</h1>
   <p class="sub">Dateien vom PC per Kamera empfangen.</p>
+  <nav class="switch" id="modeSwitch" aria-label="Verfahren">
+    <a class="on" href="./">QR-Codes</a><a href="./cimbar/">cimbar (schnell)</a>
+  </nav>
 
   <!-- Start -->
   <section id="vStart">

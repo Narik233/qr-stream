@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>cimbar E2E-Test</title>
+<style>
+body{margin:0;display:grid;grid-template-columns:1fr 1fr;height:100vh;font:13px system-ui,sans-serif}
+iframe{border:0;width:100%;height:100%}
+#log{position:fixed;bottom:0;left:0;right:0;max-height:30vh;overflow:auto;background:#111;color:#0f0;font:12px monospace;margin:0;padding:8px;z-index:9}
+</style>
+</head>
+<body>
+<!-- Über einen lokalen Webserver öffnen (http://localhost/...), nach `npm run build`. -->
+<iframe id="s" src="../dist/cimbar/sender.html"></iframe>
+<iframe id="r" src="../dist/cimbar/index.html"></iframe>
+<pre id="log"></pre>
+<script>
+// Sender-Canvas -> captureStream -> Empfänger-Video (statt Kamera) -> Datei bitgenau vergleichen.
+const log = m => { document.getElementById('log').textContent += m + '\n'; };
+const until = async (fn, ms, what) => {
+  const t0 = performance.now();
+  while (!fn()) {
+    if (performance.now() - t0 > ms) throw new Error('Timeout: ' + what);
+    await new Promise(r => setTimeout(r, 100));
+  }
+};
+
+async function run({ size = 200000, mode = 'B', random = true } = {}) {
+  const sw = document.getElementById('s').contentWindow;
+  const rw = document.getElementById('r').contentWindow;
+  await until(() => sw.Module?.calledRun && rw.Module?.calledRun, 20000, 'WASM laden');
+
+  sw.document.querySelector(`#modeSeg [data-v="${mode}"]`).click();
+  const data = new Uint8Array(size);
+  if (random) crypto.getRandomValues(data.subarray(0, Math.min(size, 65536)));
+  for (let i = 65536; i < size; i++) data[i] = random ? (data[i - 65536] * 31 + i) & 255 : 65;
+  const name = `test-${mode}-${size}.bin`;
+  sw.Main.importFile(new sw.File([data], name));
+
+  if (!rw.__streamStarted) {
+    // Kamera durch den Sender-Canvas ersetzen und über den echten Start-Button starten.
+    rw.__streamStarted = true;
+    const stream = sw.document.getElementById('canvas').captureStream(15);
+    rw.navigator.mediaDevices.getUserMedia = async () => stream;
+    await until(() => !rw.document.getElementById('startBtn').disabled, 20000, 'Start-Button');
+    rw.document.getElementById('startBtn').click();
+  }
+  const t0 = performance.now();
+  await until(() => rw.__lastReceived?.name === name, 180000, 'Empfang ' + name);
+  const secs = (performance.now() - t0) / 1000;
+  const url = rw.document.getElementById('saveBtn').href;
+  const got = new Uint8Array(await (await rw.fetch(url)).arrayBuffer());
+  const identical = got.length === data.length && got.every((b, i) => b === data[i]);
+  rw.document.getElementById('againBtn').click();
+  const res = { name, size, mode, identical, secs: +secs.toFixed(1), kbps: +(size / 1024 / secs).toFixed(1) };
+  log(JSON.stringify(res));
+  return res;
+}
+window.run = run;
+</script>
+</body>
+</html>

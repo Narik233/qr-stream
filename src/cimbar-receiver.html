@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>cimbar Empfänger</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--text:#1b1f24;--muted:#69727d;--border:#e2e5e9;--accent:#2563eb;
+  --accent-text:#fff;--ok:#15803d;--err:#dc2626}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--text:#e7e9ec;--muted:#98a2ad;
+  --border:#2a2f37;--accent:#5b8cff;--accent-text:#0b1020;--ok:#4ade80;--err:#f87171}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:560px;margin:0 auto;padding:20px 16px calc(24px + env(safe-area-inset-bottom))}
+h1{font-size:22px;margin:0}
+.sub{color:var(--muted);margin:4px 0 16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px}
+.btn{display:flex;align-items:center;justify-content:center;width:100%;border:0;border-radius:12px;padding:14px 20px;
+  font:600 16px system-ui,sans-serif;background:var(--accent);color:var(--accent-text);cursor:pointer;text-decoration:none}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btn:disabled{opacity:.5}
+.btns{display:grid;gap:10px}
+.switch{display:flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--card);margin-bottom:14px}
+.switch a{flex:1;text-align:center;padding:9px 0;color:var(--text);text-decoration:none;font-weight:500}
+.switch a+a{border-left:1px solid var(--border)}
+.switch a.on{background:var(--accent);color:var(--accent-text);font-weight:600}
+ol{margin:0;padding-left:20px;color:var(--muted)}
+ol li{margin:4px 0}
+.err{color:var(--err)} .ok{color:var(--ok)}
+.meta{font-size:12px;color:var(--muted)}
+.foot{font-size:11px;color:var(--muted);margin-top:18px}
+.foot a{color:inherit}
+
+/* Scan-Ansicht: Vollbild-Kamera */
+#scan{position:fixed;inset:0;background:#000;z-index:10}
+#container{position:absolute;inset:0;overflow:hidden}
+#video{width:100%;height:100%;display:block}
+.crosshairs{position:fixed;width:12%;height:12%;border-color:rgba(255,255,255,.8)!important;z-index:11;pointer-events:none}
+.crosshairs.scanning_xhairs{border-color:#facc15!important}
+.crosshairs.active_xhairs{border-color:#4ade80!important}
+#crosshair1{top:15%;right:15%;border-top:5px solid;border-right:5px solid}
+#crosshair2{bottom:25%;left:15%;border-bottom:5px solid;border-left:5px solid}
+.panel{position:fixed;left:0;right:0;bottom:0;z-index:12;padding:14px 16px calc(14px + env(safe-area-inset-bottom));
+  background:linear-gradient(transparent,rgba(0,0,0,.75) 30%);color:#fff}
+.bar{height:10px;background:rgba(255,255,255,.25);border-radius:5px;overflow:hidden}
+.bar>i{display:block;height:100%;width:0;background:#4ade80;transition:width .2s}
+.prow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;font-size:14px}
+.prow b{font-size:20px}
+.panel .btn.ghost{color:#fff;border-color:rgba(255,255,255,.4);margin-top:12px;padding:10px}
+
+/* Fertig-Ansicht über der Kamera */
+#done{position:fixed;inset:0;z-index:20;background:var(--bg);overflow:auto}
+.fname{font-weight:600;font-size:17px;overflow-wrap:anywhere}
+.preview{max-width:100%;border-radius:10px;margin-top:12px;display:block}
+</style>
+</head>
+<body>
+<main id="start">
+  <h1>QR-Stream</h1>
+  <p class="sub">Dateien vom PC per Kamera empfangen.</p>
+  <nav class="switch" aria-label="Verfahren">
+    <a href="../">QR-Codes</a><a class="on" href="./">cimbar (schnell)</a>
+  </nav>
+  <div class="card">
+    <ol>
+      <li>Am PC die Sender-Seite öffnen, oben <b>cimbar</b> wählen und eine Datei ziehen.</li>
+      <li>Hier die Kamera starten.</li>
+      <li>Handy ruhig halten, sodass der farbige Code zwischen den Eckmarken liegt.</li>
+    </ol>
+  </div>
+  <div class="btns"><button class="btn" id="startBtn" disabled>Lade Decoder …</button></div>
+  <p class="err" id="startErr" hidden></p>
+  <p class="foot">cimbar-Dekodierung: <a href="https://github.com/sz3/libcimbar">libcimbar</a> v0.6.8 von sz3,
+    <a href="LICENSE">MPL-2.0</a>, unverändert eingebunden.</p>
+</main>
+
+<section id="scan" hidden>
+  <div id="container"><video id="video" autoplay playsinline muted></video></div>
+  <div id="crosshair1" class="crosshairs"></div>
+  <div id="crosshair2" class="crosshairs"></div>
+  <div class="panel">
+    <div class="prow"><span id="scanLabel">Suche Code …</span><b id="pct">0 %</b></div>
+    <div class="bar"><i id="bar"></i></div>
+    <button class="btn ghost" id="cancelBtn">Abbrechen</button>
+  </div>
+</section>
+
+<section id="done" hidden>
+  <main>
+    <h1>Empfangen</h1>
+    <p class="sub">Die Kamera läuft weiter – weitere Dateien können direkt folgen.</p>
+    <div class="card">
+      <div class="fname" id="dName"></div>
+      <div class="meta" id="dMeta"></div>
+      <div id="dPreview"></div>
+    </div>
+    <div class="btns">
+      <a class="btn" id="saveBtn">Speichern</a>
+      <button class="btn ghost" id="shareBtn" hidden>Teilen …</button>
+      <button class="btn ghost" id="againBtn">Weiter empfangen</button>
+    </div>
+  </main>
+</section>
+
+<!-- Von recv.js erwartete Elemente (Debug-Ausgaben) -->
+<div hidden>
+  <div id="errorbox"></div><div id="t0"></div><div id="t1"></div><div id="t2"></div><div id="t3"></div>
+  <div id="framesInFlight"></div><div id="tdec"></div><div id="progress_bars"></div>
+  <div id="nav-container"></div><span id="mode-val"></span><button id="nav-button"></button><div id="nav-content"></div>
+</div>
+
+<script src="{{cimbar:recv}}"></script>
+<script src="{{cimbar:zstd}}"></script>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const WORKERS = Math.min(4, Math.max(2, navigator.hardwareConcurrency || 4));
+let moduleReady = false, started = false, resultUrl = null;
+const received = new Set();
+
+function fmtSize(b) {
+  const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return (i ? b.toFixed(1) : b) + ' ' + u[i];
+}
+function showError(msg) {
+  $('#startErr').textContent = msg;
+  $('#startErr').hidden = false;
+  $('#scan').hidden = true;
+  $('#start').hidden = false;
+}
+
+// ---- recv.js / zstd.js an unsere Oberfläche anpassen (Dateien unverändert) ----
+Recv.set_error = function (msg) { showError(String(msg)); return false; };
+
+let t0 = 0;
+Recv.render_progress = function (report) {
+  const p = Math.max(0, ...report.filter(x => typeof x === 'number'));
+  if (!t0 && p > 0) t0 = performance.now();
+  $('#bar').style.width = (p * 100).toFixed(1) + '%';
+  $('#pct').textContent = Math.floor(p * 100) + ' %';
+  $('#scanLabel').textContent = report.length > 1 ? `${report.length} Dateien gleichzeitig` : 'Empfange …';
+};
+
+// Statt automatischem Download: Ergebnis anzeigen, Speichern per Tipp.
+Zstd.download_blob = function (name, blob) {
+  const key = name + '|' + blob.size;
+  if (received.has(key)) return; // Sender wiederholt die Datei – schon empfangen
+  received.add(key);
+  const secs = t0 ? (performance.now() - t0) / 1000 : 0;
+  t0 = 0;
+  showDone(name, blob, secs);
+  Recv.setMode('Auto'); // nächste Datei darf einen anderen Modus haben
+};
+
+// recv.js legt sich nach dem ersten Treffer auf einen Modus fest. Wechselt der
+// Sender den Modus, würde der Empfänger hängen -> nach 3 s ohne Treffer zurück auf Auto.
+let lastDecode = 0;
+const onDecode = Recv.on_decode;
+Recv.on_decode = function (wid, data) {
+  if (data && data.buff && data.buff.length) lastDecode = performance.now();
+  return onDecode(wid, data);
+};
+setInterval(() => {
+  if (lastDecode && performance.now() - lastDecode > 3000) {
+    lastDecode = 0;
+    Recv.setMode('Auto');
+  }
+}, 1000);
+
+const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp',
+  heic: 'image/heic', pdf: 'application/pdf', txt: 'text/plain', csv: 'text/csv', json: 'application/json',
+  mp4: 'video/mp4', mov: 'video/quicktime', mp3: 'audio/mpeg', zip: 'application/zip' };
+
+function showDone(name, rawBlob, secs) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const mime = MIME[ext] || 'application/octet-stream';
+  const blob = new Blob([rawBlob], { type: mime });
+  if (resultUrl) URL.revokeObjectURL(resultUrl);
+  resultUrl = URL.createObjectURL(blob);
+  if (navigator.vibrate) navigator.vibrate(150);
+
+  $('#dName').textContent = name;
+  $('#dMeta').textContent = fmtSize(blob.size) +
+    (secs > 1 ? ` · ${secs.toFixed(0)} s · ${fmtSize(blob.size / secs)}/s` : '');
+  const prev = $('#dPreview');
+  prev.innerHTML = '';
+  if (mime.startsWith('image/') && mime !== 'image/heic') {
+    const img = document.createElement('img');
+    img.className = 'preview'; img.alt = ''; img.src = resultUrl;
+    prev.append(img);
+  }
+  $('#saveBtn').href = resultUrl;
+  $('#saveBtn').download = name;
+
+  const file = new File([blob], name, { type: mime });
+  const share = $('#shareBtn');
+  share.hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
+  share.onclick = () => navigator.share({ files: [file] }).catch(() => {});
+
+  $('#bar').style.width = '0';
+  $('#pct').textContent = '0 %';
+  $('#scanLabel').textContent = 'Suche Code …';
+  $('#done').hidden = false;
+  window.__lastReceived = { name, size: blob.size };
+}
+
+// ---- Start ----------------------------------------------------------------------
+async function start() {
+  $('#startErr').hidden = true;
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    return showError('Kamerazugriff geht nur über HTTPS. Bitte die Seite über eine https://-Adresse öffnen.');
+  }
+  if (typeof VideoFrame === 'undefined') {
+    return showError('Dieser Browser ist zu alt für cimbar (WebCodecs fehlt). Bitte den QR-Code-Modus nutzen.');
+  }
+  $('#start').hidden = true;
+  $('#scan').hidden = false;
+  if (!started) {
+    started = true;
+    await Recv.ww_ready;
+    Recv.init_video($('#video'));
+  }
+}
+$('#startBtn').onclick = start;
+$('#againBtn').onclick = () => { $('#done').hidden = true; };
+$('#cancelBtn').onclick = () => location.reload();
+
+function checkReady() {
+  if (!moduleReady) return;
+  $('#startBtn').disabled = false;
+  $('#startBtn').textContent = 'Kamera starten';
+}
+
+Recv.init_ww(WORKERS);
+var Module = {
+  onRuntimeInitialized: () => { moduleReady = true; checkReady(); },
+};
+</script>
+<script src="{{cimbar:cimbar_js}}"></script>
+</body>
+</html>

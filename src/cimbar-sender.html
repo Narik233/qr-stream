@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>cimbar Sender</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--text:#1b1f24;--muted:#69727d;--border:#e2e5e9;--accent:#2563eb;
+  --accent-text:#fff;--accent-soft:#e9f0ff;--warn:#b45309;--warn-soft:#fff7ed}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--text:#e7e9ec;--muted:#98a2ad;
+  --border:#2a2f37;--accent:#5b8cff;--accent-text:#0b1020;--accent-soft:#1b2640;--warn:#fbbf24;--warn-soft:#2a2112}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:grid;grid-template-columns:320px 1fr;min-height:100vh}
+aside{padding:20px;display:flex;flex-direction:column;gap:16px;border-right:1px solid var(--border);overflow:auto}
+aside>*{flex-shrink:0}
+h1{font-size:20px;margin:0}
+.sub{color:var(--muted);margin:2px 0 0}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
+.card h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.switch{display:flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--card)}
+.switch a{flex:1;text-align:center;padding:8px 0;color:var(--text);text-decoration:none;font-weight:500}
+.switch a+a{border-left:1px solid var(--border)}
+.switch a.on{background:var(--accent);color:var(--accent-text);font-weight:600}
+.drop{border:2px dashed var(--border);border-radius:10px;padding:18px 12px;text-align:center;cursor:pointer;transition:.15s}
+.drop:hover{border-color:var(--accent)}
+.drop p{margin:6px 0 0;color:var(--muted);font-size:12px}
+.file{font-weight:600;overflow-wrap:anywhere}
+label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+label:first-of-type{margin-top:0}
+.seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.seg button{flex:1;border:0;background:transparent;color:var(--text);padding:7px 0;font:inherit;cursor:pointer}
+.seg button+button{border-left:1px solid var(--border)}
+.seg button.on{background:var(--accent);color:var(--accent-text);font-weight:600}
+.hint{font-size:12px;color:var(--muted);margin:6px 0 0}
+input[type=range]{width:100%}
+.row{display:flex;justify-content:space-between;align-items:baseline}
+.btn{border:0;border-radius:10px;padding:11px 16px;font:600 14px system-ui,sans-serif;background:transparent;
+  color:var(--text);border:1px solid var(--border);cursor:pointer;width:100%}
+.warn{background:var(--warn-soft);color:var(--warn);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:12px}
+.foot{font-size:11px;color:var(--muted);margin-top:auto}
+.foot a{color:inherit}
+main{position:relative;background:#fff;overflow:hidden}
+#stage{position:absolute;inset:0;display:grid;place-items:center}
+#canvas{display:block;pointer-events:none}
+.placeholder{position:absolute;inset:0;display:grid;place-items:center;color:#8a939c;text-align:center;padding:24px;font-size:15px}
+.err{color:#dc2626}
+@media (max-width:760px){body{grid-template-columns:1fr;grid-template-rows:auto 70vh}aside{border-right:0}}
+</style>
+</head>
+<body>
+<aside>
+  <div>
+    <h1>QR-Stream</h1>
+    <p class="sub">Dateien optisch aufs Handy übertragen.</p>
+  </div>
+
+  <nav class="switch" aria-label="Verfahren">
+    <a href="../sender.html">QR-Codes</a><a class="on" href="./sender.html">cimbar (schnell)</a>
+  </nav>
+
+  <section class="card">
+    <h2>Datei</h2>
+    <div class="drop" id="drop">
+      <div id="fileInfo"><b>Datei auswählen</b><p>oder ins Fenster ziehen</p></div>
+    </div>
+    <input type="file" id="file_input" hidden>
+  </section>
+
+  <section class="card">
+    <h2>Einstellungen</h2>
+    <label>Modus</label>
+    <div class="seg" id="modeSeg">
+      <button data-v="B">B</button><button data-v="Bm">Bm</button><button data-v="Bu">Bu</button><button data-v="4C">4C</button>
+    </div>
+    <p class="hint" id="modeHint"></p>
+    <label class="row"><span>Bilder pro Sekunde</span><span id="fpsVal"></span></label>
+    <input type="range" id="fps" min="5" max="20" step="5">
+  </section>
+
+  <button class="btn" id="fullBtn">Vollbild</button>
+
+  <div class="warn"><b>Achtung Lichtempfindlichkeit:</b> Der Code flackert schnell. Bei fotosensitiver Epilepsie
+    nicht auf den Bildschirm schauen – nur die Handykamera muss ihn „sehen“.</div>
+
+  <p class="hint">Auf dem Handy den <b>cimbar-Empfänger</b> öffnen (Umschalter oben auf der Empfänger-Seite).
+    Das Handy erkennt den Modus automatisch.</p>
+
+  <p class="foot">cimbar-Kodierung: <a href="https://github.com/sz3/libcimbar">libcimbar</a> v0.6.8 von sz3,
+    <a href="LICENSE">MPL-2.0</a>, unverändert eingebunden.</p>
+
+  <!-- Von main.js erwartete Elemente -->
+  <div hidden>
+    <div id="nav-container"></div><button id="nav-button"></button><div id="nav-content"></div>
+    <div id="dragdrop"></div><div id="status"></div><span id="current-file"></span>
+  </div>
+</aside>
+
+<main>
+  <div id="stage"><canvas id="canvas"></canvas></div>
+  <div class="placeholder" id="placeholder">Links eine Datei wählen.</div>
+</main>
+
+<script src="{{cimbar:send}}"></script>
+<script src="{{cimbar:main}}"></script>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const canvas = $('#canvas');
+const MODE_HINTS = {
+  B: 'Standard, empfohlen. Quadratisch.',
+  Bm: 'Variante von B im Breitformat – nutzt breite Monitore besser.',
+  Bu: 'Variante von B, leicht breiter als quadratisch.',
+  '4C': 'Älterer Modus. Kann in manchen Situationen gleichmäßiger laufen.',
+};
+const settings = { mode: 'B', fps: 15 };
+try { Object.assign(settings, JSON.parse(localStorage.getItem('qrs-cimbar') || '{}')); } catch {}
+const save = () => { try { localStorage.setItem('qrs-cimbar', JSON.stringify(settings)); } catch {} };
+let lastFile = null;
+let ready = false;
+
+// ---- main.js an unsere Oberfläche anpassen (ohne die Datei zu ändern) -------
+// Eigene Skalierung ohne Drehung: main.js dreht breite Modi (Bm), sobald der
+// Bereich höher als breit ist – dabei wurde das Bild im Test verzerrt und unlesbar.
+Main.resize = function () {
+  const r = $('#stage').getBoundingClientRect();
+  const W = Math.max(50, r.width - 24), H = Math.max(50, r.height - 24);
+  const ratio = Module._cimbare_get_aspect_ratio();
+  Send.rotate_window(false);
+  const w = W / H > ratio ? H * ratio : W;
+  canvas.style.width = Math.floor(w) + 'px';
+  canvas.style.height = Math.floor(w / ratio) + 'px';
+};
+Main.checkNavButtonOverlap = function () {};
+Main.clickNav = function () {};
+Main.setActive = function () { $('#placeholder').hidden = true; };
+Main.setTitle = function (msg) { document.title = 'cimbar: ' + msg; };
+Main.setHTML = function (id, msg) {
+  if (id === 'current-file') {
+    const info = $('#fileInfo');
+    info.innerHTML = '';
+    const n = document.createElement('div'); n.className = 'file'; n.textContent = msg;
+    const p = document.createElement('p'); p.textContent = 'Klicken für andere Datei';
+    info.append(n, p);
+  }
+};
+// Ersetzt Send.importFile: Das Original liest die Datei asynchron in Stücken, zwei
+// schnell hintereinander gewählte Dateien (oder Moduswechsel) würden sich vermischen.
+// Hier: erst komplett lesen, dann synchron kodieren; veraltete Aufrufe verwerfen.
+let importToken = 0;
+Main.importFile = async function (file) {
+  const token = ++importToken;
+  lastFile = file;
+  const data = new Uint8Array(await file.arrayBuffer());
+  if (token !== importToken) return;
+  const chunk = Module._cimbare_encode_bufsize() * 16;
+  const ptr = Module._malloc(chunk);
+  try {
+    Send.encode_init(file.name);
+    for (let off = 0; off < data.length; off += chunk) {
+      const part = data.subarray(off, off + chunk);
+      Module.HEAPU8.set(part, ptr); // HEAPU8 jedes Mal neu lesen (Speicher kann wachsen)
+      Send.encode_bytes(new Uint8Array(Module.HEAPU8.buffer, ptr, part.length));
+    }
+    Send.encode_bytes(new Uint8Array(Module.HEAPU8.buffer, ptr, 0)); // flush
+  } finally {
+    Module._free(ptr);
+  }
+};
+
+// ---- Einstellungen ------------------------------------------------------------
+function applyMode(mode) {
+  settings.mode = mode; save();
+  $('#modeSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === mode));
+  $('#modeHint').textContent = MODE_HINTS[mode];
+  if (!ready) return;
+  Main.setMode(mode);
+  if (lastFile) Main.importFile(lastFile); // mit neuem Modus neu kodieren
+}
+function applyFps(fps) {
+  settings.fps = fps; save();
+  $('#fps').value = fps;
+  $('#fpsVal').textContent = fps + ' / s';
+  if (ready) Main.setFPS(fps);
+}
+$('#modeSeg').onclick = e => { if (e.target.dataset.v) applyMode(e.target.dataset.v); };
+$('#fps').oninput = e => applyFps(+e.target.value);
+applyMode(settings.mode);
+applyFps(settings.fps);
+
+$('#drop').onclick = () => $('#file_input').click();
+$('#file_input').onchange = e => { if (e.target.files[0] && ready) Main.importFile(e.target.files[0]); e.target.value = ''; };
+$('#fullBtn').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.querySelector('main').requestFullscreen();
+new ResizeObserver(() => { if (ready) Main.resize(); }).observe($('#stage'));
+
+const gl = document.createElement('canvas');
+if (!gl.getContext('webgl2') && !gl.getContext('webgl')) {
+  $('#placeholder').innerHTML = '<span class="err">WebGL ist in diesem Browser nicht verfügbar – cimbar braucht WebGL.</span>';
+}
+
+// ---- WASM starten ---------------------------------------------------------------
+var Module = {
+  canvas: canvas,
+  onRuntimeInitialized: () => {
+    Main.init(canvas);       // startet mit Modus B und der Render-Schleife
+    ready = true;
+    applyMode(settings.mode);
+    applyFps(settings.fps);
+  },
+};
+</script>
+<script src="{{cimbar:cimbar_js}}"></script>
+</body>
+</html>
