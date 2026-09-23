@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>QR-Stream Empfänger</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--text:#1b1f24;--muted:#69727d;--border:#e2e5e9;--accent:#2563eb;
+  --accent-text:#fff;--accent-soft:#e9f0ff;--ok:#15803d;--err:#dc2626}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--text:#e7e9ec;--muted:#98a2ad;
+  --border:#2a2f37;--accent:#5b8cff;--accent-text:#0b1020;--accent-soft:#1b2640;--ok:#4ade80;--err:#f87171}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:560px;margin:0 auto;padding:20px 16px calc(24px + env(safe-area-inset-bottom))}
+h1{font-size:22px;margin:0}
+.sub{color:var(--muted);margin:4px 0 16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px}
+.btn{display:flex;align-items:center;justify-content:center;width:100%;border:0;border-radius:12px;padding:14px 20px;
+  font:600 16px system-ui,sans-serif;background:var(--accent);color:var(--accent-text);cursor:pointer;text-decoration:none}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btns{display:grid;gap:10px}
+ol{margin:0;padding-left:20px;color:var(--muted)}
+ol li{margin:4px 0}
+.err{color:var(--err)} .ok{color:var(--ok)}
+.video{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:3/4;margin-bottom:14px}
+video{width:100%;height:100%;object-fit:cover;display:block}
+.frame{position:absolute;inset:8%;border:2px solid rgba(255,255,255,.55);border-radius:12px;pointer-events:none;transition:border-color .1s}
+.frame.hit{border-color:#4ade80}
+.badge{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:4px 8px;border-radius:8px}
+.bar{height:10px;background:var(--border);border-radius:5px;overflow:hidden}
+.bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;text-align:center}
+.stats b{display:block;font-size:17px}
+.meta{font-size:12px;color:var(--muted)}
+.pct{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.pct b{font-size:22px}
+.fname{font-weight:600;font-size:17px;overflow-wrap:anywhere}
+.preview{max-width:100%;border-radius:10px;margin-top:12px;display:block}
+pre.preview{background:var(--bg);padding:10px;font-size:12px;white-space:pre-wrap;max-height:240px;overflow:auto}
+</style>
+</head>
+<body>
+<main>
+  <h1>QR-Stream</h1>
+  <p class="sub">Dateien vom PC per Kamera empfangen.</p>
+
+  <!-- Start -->
+  <section id="vStart">
+    <div class="card">
+      <ol>
+        <li>Am PC die Sender-Seite öffnen und eine Datei wählen.</li>
+        <li>Hier die Kamera starten.</li>
+        <li>Handy ruhig auf den Bildschirm halten, sodass alle Codes im Rahmen sind.</li>
+      </ol>
+    </div>
+    <div class="btns"><button class="btn" id="startBtn">Kamera starten</button></div>
+    <p class="err" id="startErr" hidden></p>
+  </section>
+
+  <!-- Scannen -->
+  <section id="vScan" hidden>
+    <div class="video">
+      <video id="video" playsinline muted autoplay></video>
+      <div class="frame" id="frame"></div>
+      <div class="badge" id="badge">Suche Codes …</div>
+    </div>
+    <div class="card">
+      <div class="pct"><span id="scanLabel">Warte auf Codes</span><b id="pct">0 %</b></div>
+      <div class="bar"><i id="bar"></i></div>
+      <div class="stats">
+        <div><b id="stCodes">0</b><span class="meta">Codes/s</span></div>
+        <div><b id="stRate">–</b><span class="meta">Empfang</span></div>
+        <div><b id="stEta">–</b><span class="meta">Rest</span></div>
+      </div>
+    </div>
+    <div class="btns"><button class="btn ghost" id="cancelBtn">Abbrechen</button></div>
+  </section>
+
+  <!-- Fertig -->
+  <section id="vDone" hidden>
+    <div class="card">
+      <div class="fname" id="dName"></div>
+      <div class="meta" id="dMeta"></div>
+      <div id="dPreview"></div>
+    </div>
+    <div class="btns">
+      <a class="btn" id="saveBtn">Speichern</a>
+      <button class="btn ghost" id="shareBtn" hidden>Teilen …</button>
+      <button class="btn ghost" id="againBtn">Weitere Datei empfangen</button>
+    </div>
+  </section>
+</main>
+
+<!-- @inline zxing -->
+<!-- @inline codec -->
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+
+// ---- Zustand ---------------------------------------------------------------
+let stream = null, scanning = false, dec = null, doneSession = null;
+let stats = { t0: 0, hits: [], bytes: 0 };
+let resultUrl = null;
+
+function show(view) {
+  for (const v of ['vStart', 'vScan', 'vDone']) $('#' + v).hidden = v !== view;
+}
+function fmtSize(b) {
+  const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return (i ? b.toFixed(1) : b) + ' ' + u[i];
+}
+function fmtTime(s) {
+  if (!isFinite(s) || s < 0) return '–';
+  s = Math.ceil(s);
+  return s < 60 ? s + ' s' : Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ' min';
+}
+
+// ---- Scanner (zxing-wasm, WASM ist eingebettet) -----------------------------
+let zxReady = null;
+function initScanner() {
+  if (!zxReady) {
+    const bin = Uint8Array.from(atob(window.ZXING_WASM_B64), c => c.charCodeAt(0));
+    zxReady = ZXingWASM.prepareZXingModule({ overrides: { wasmBinary: bin.buffer }, fireImmediately: true });
+  }
+  return zxReady;
+}
+const READER = { formats: ['QRCode'], maxNumberOfSymbols: 8, tryHarder: true, tryRotate: false, tryInvert: false };
+
+// Verarbeitet ein Kamerabild. Gibt die Anzahl erkannter Codes zurück.
+async function processImage(img) {
+  const results = await ZXingWASM.readBarcodes(img, READER);
+  let n = 0;
+  for (const r of results) {
+    if (r.isValid && handleText(r.text)) n++;
+    if (!scanning && !window.__test) break;
+  }
+  return n;
+}
+
+// ---- Pakete zusammensetzen --------------------------------------------------
+function handleText(text) {
+  const p = QRS.parsePacket(text);
+  if (!p) return false;
+  if (p.session === doneSession) return true;
+  if (!dec || !dec.matches(p)) {
+    dec = new QRS.Decoder(p.session, p.length, p.chunkSize);
+    stats = { t0: performance.now(), hits: [], bytes: 0 };
+  }
+  stats.hits.push(performance.now());
+  if (dec.add(p.id, p.body)) stats.bytes += p.chunkSize;
+  if (dec.done) finish();
+  return true;
+}
+
+function updateUi() {
+  const now = performance.now();
+  stats.hits = stats.hits.filter(t => now - t < 2000);
+  $('#stCodes').textContent = (stats.hits.length / 2).toFixed(0);
+  if (!dec) return;
+  const pct = dec.rank / dec.k;
+  $('#bar').style.width = (pct * 100).toFixed(1) + '%';
+  $('#pct').textContent = Math.floor(pct * 100) + ' %';
+  $('#scanLabel').textContent = `${dec.rank} / ${dec.k} Blöcke · ${fmtSize(dec.length)}`;
+  const secs = (now - stats.t0) / 1000;
+  if (secs > 1) {
+    const rate = stats.bytes / secs;
+    $('#stRate').textContent = fmtSize(rate) + '/s';
+    $('#stEta').textContent = fmtTime(((dec.k - dec.rank) * dec.chunkSize) / rate);
+  }
+}
+
+// ---- Kamera -----------------------------------------------------------------
+async function startCamera() {
+  $('#startErr').hidden = true;
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return fail(location.protocol === 'https:' || location.hostname === 'localhost'
+      ? 'Dieser Browser unterstützt keinen Kamerazugriff.'
+      : 'Kamerazugriff geht nur über HTTPS. Bitte die Seite über eine https://-Adresse öffnen.');
+  }
+  try {
+    const [s] = await Promise.all([
+      navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      }),
+      initScanner(),
+    ]);
+    stream = s;
+  } catch (e) {
+    return fail(e.name === 'NotAllowedError' ? 'Kamerazugriff wurde verweigert.' : 'Kamera konnte nicht gestartet werden: ' + e.message);
+  }
+  const track = stream.getVideoTracks()[0];
+  track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+  const video = $('#video');
+  video.srcObject = stream;
+  await video.play().catch(() => {});
+  dec = null;
+  show('vScan');
+  updateUi();
+  scanning = true;
+  scanLoop();
+}
+
+function stopCamera() {
+  scanning = false;
+  stream?.getTracks().forEach(t => t.stop());
+  stream = null;
+}
+
+function fail(msg) {
+  $('#startErr').textContent = msg;
+  $('#startErr').hidden = false;
+  show('vStart');
+}
+
+async function scanLoop() {
+  const video = $('#video');
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  let lastUi = 0;
+  while (scanning) {
+    if (video.readyState >= 2 && video.videoWidth) {
+      const w = video.videoWidth, h = video.videoHeight;
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      ctx.drawImage(video, 0, 0, w, h);
+      let n = 0;
+      try { n = await processImage(ctx.getImageData(0, 0, w, h)); } catch (e) { console.error(e); }
+      $('#frame').classList.toggle('hit', n > 0);
+      $('#badge').textContent = n ? `${n} Code${n > 1 ? 's' : ''} erkannt` : 'Suche Codes …';
+    }
+    const now = performance.now();
+    if (now - lastUi > 250) { updateUi(); lastUi = now; }
+    await new Promise(r => requestAnimationFrame(r));
+  }
+}
+
+// ---- Fertig -----------------------------------------------------------------
+async function finish() {
+  stopCamera();
+  doneSession = dec.session;
+  updateUi();
+  const file = await QRS.unpackFile(dec.result());
+  dec = null;
+  if (navigator.vibrate) navigator.vibrate(150);
+
+  if (resultUrl) URL.revokeObjectURL(resultUrl);
+  const mime = file.mime || 'application/octet-stream';
+  const blob = new Blob([file.data], { type: mime });
+  resultUrl = URL.createObjectURL(blob);
+
+  $('#dName').textContent = file.name || 'datei';
+  $('#dMeta').innerHTML = '';
+  $('#dMeta').append(fmtSize(file.data.length) + ' · ');
+  const check = document.createElement('span');
+  check.className = file.ok ? 'ok' : 'err';
+  check.textContent = file.ok ? 'Prüfsumme OK' : 'Prüfsumme falsch – Datei beschädigt';
+  $('#dMeta').append(check);
+
+  const prev = $('#dPreview');
+  prev.innerHTML = '';
+  if (mime.startsWith('image/')) {
+    const img = document.createElement('img');
+    img.className = 'preview'; img.src = resultUrl; img.alt = '';
+    prev.append(img);
+  } else if (mime.startsWith('text/') || /\.(txt|md|csv|json|xml|log|ini|cfg|yaml|yml)$/i.test(file.name)) {
+    const pre = document.createElement('pre');
+    pre.className = 'preview';
+    pre.textContent = new TextDecoder().decode(file.data.subarray(0, 20000));
+    prev.append(pre);
+  }
+
+  const save = $('#saveBtn');
+  save.href = resultUrl;
+  save.download = file.name || 'datei';
+
+  const shareFile = new File([blob], file.name || 'datei', { type: mime });
+  const share = $('#shareBtn');
+  share.hidden = !(navigator.canShare && navigator.canShare({ files: [shareFile] }));
+  share.onclick = () => navigator.share({ files: [shareFile] }).catch(() => {});
+
+  window.__lastFile = file;
+  show('vDone');
+}
+
+// ---- Events -----------------------------------------------------------------
+$('#startBtn').onclick = startCamera;
+$('#cancelBtn').onclick = () => { stopCamera(); dec = null; show('vStart'); };
+$('#againBtn').onclick = startCamera;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && scanning) { stopCamera(); show('vStart'); }
+});
+
+// Für automatische Tests: Bilder direkt einspeisen.
+window.__receiver = { initScanner, processImage, state: () => ({ dec, doneSession }) };
+</script>
+</body>
+</html>

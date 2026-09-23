@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QR-Stream Sender</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--text:#1b1f24;--muted:#69727d;--border:#e2e5e9;--accent:#2563eb;
+  --accent-text:#fff;--accent-soft:#e9f0ff}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--text:#e7e9ec;--muted:#98a2ad;
+  --border:#2a2f37;--accent:#5b8cff;--accent-text:#0b1020;--accent-soft:#1b2640}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:grid;grid-template-columns:320px 1fr;min-height:100vh}
+aside{padding:20px;display:flex;flex-direction:column;gap:16px;border-right:1px solid var(--border);overflow:auto}
+h1{font-size:20px;margin:0}
+.sub{color:var(--muted);margin:2px 0 0}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
+.card h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.drop{border:2px dashed var(--border);border-radius:10px;padding:18px 12px;text-align:center;cursor:pointer;transition:.15s}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop p{margin:6px 0 0;color:var(--muted);font-size:12px}
+.file{font-weight:600;overflow-wrap:anywhere}
+.meta{color:var(--muted);font-size:12px}
+label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+label:first-of-type{margin-top:0}
+.seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.seg button{flex:1;border:0;background:transparent;color:var(--text);padding:7px 0;font:inherit;cursor:pointer}
+.seg button+button{border-left:1px solid var(--border)}
+.seg button.on{background:var(--accent);color:var(--accent-text);font-weight:600}
+input[type=range]{width:100%}
+.row{display:flex;justify-content:space-between;align-items:baseline}
+.btn{border:0;border-radius:10px;padding:11px 16px;font:600 14px system-ui,sans-serif;background:var(--accent);
+  color:var(--accent-text);cursor:pointer;width:100%}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btns{display:grid;gap:8px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
+.stats b{display:block;font-size:16px}
+.hint{font-size:12px;color:var(--muted);margin:0}
+main{position:relative;display:grid;place-items:center;background:#fff;overflow:hidden}
+#stage{position:absolute;inset:0;display:grid;place-items:center}
+canvas{image-rendering:pixelated}
+.placeholder{color:#8a939c;text-align:center;padding:24px;font-size:15px}
+@media (max-width:760px){body{grid-template-columns:1fr;grid-template-rows:auto 70vh}aside{border-right:0}}
+</style>
+</head>
+<body>
+<aside>
+  <div>
+    <h1>QR-Stream</h1>
+    <p class="sub">Dateien optisch aufs Handy übertragen.</p>
+  </div>
+
+  <section class="card">
+    <h2>Datei</h2>
+    <div class="drop" id="drop">
+      <div id="fileInfo"><b>Datei auswählen</b><p>oder hierher ziehen</p></div>
+    </div>
+    <input type="file" id="fileInput" hidden>
+  </section>
+
+  <section class="card">
+    <h2>Einstellungen</h2>
+    <label>QR-Codes gleichzeitig</label>
+    <div class="seg" id="codesSeg">
+      <button data-v="1">1</button><button data-v="2">2</button><button data-v="4">4</button>
+    </div>
+    <label>Datenmenge pro Code</label>
+    <div class="seg" id="chunkSeg">
+      <button data-v="300">Robust</button><button data-v="500">Normal</button><button data-v="800">Dicht</button>
+    </div>
+    <label class="row"><span>Wechsel pro Sekunde</span><span id="fpsVal"></span></label>
+    <input type="range" id="fps" min="2" max="20" step="1">
+  </section>
+
+  <section class="card">
+    <h2>Übertragung</h2>
+    <div class="stats">
+      <div><span class="meta">Blöcke</span><b id="stBlocks">–</b></div>
+      <div><span class="meta">Gesendet</span><b id="stSent">–</b></div>
+      <div><span class="meta">Rate (brutto)</span><b id="stRate">–</b></div>
+      <div><span class="meta">Mind. Dauer</span><b id="stEta">–</b></div>
+    </div>
+  </section>
+
+  <div class="btns">
+    <button class="btn" id="startBtn" disabled>Senden starten</button>
+    <button class="btn ghost" id="fullBtn">Vollbild</button>
+  </div>
+  <p class="hint">Auf dem Handy die Empfänger-Seite öffnen und die Codes filmen, bis die Datei fertig ist.
+    Einzelne verpasste Codes sind egal. Leertaste: Start/Pause.</p>
+</aside>
+
+<main id="main">
+  <div id="stage"><canvas id="cv" hidden></canvas><div class="placeholder" id="placeholder">Links eine Datei wählen.</div></div>
+</main>
+
+<!-- @inline qrcode -->
+<!-- @inline codec -->
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const QUIET = 4;
+
+const state = {
+  codes: 4, chunk: 500, fps: 8,
+  file: null, payload: null, enc: null,
+  running: false, timer: null, nextId: 0, sent: 0,
+};
+
+function loadSettings() {
+  try { Object.assign(state, JSON.parse(localStorage.getItem('qrs-sender') || '{}')); } catch {}
+}
+function saveSettings() {
+  try { localStorage.setItem('qrs-sender', JSON.stringify({ codes: state.codes, chunk: state.chunk, fps: state.fps })); } catch {}
+}
+
+function fmtSize(b) {
+  const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return (i ? b.toFixed(1) : b) + ' ' + u[i];
+}
+function fmtTime(s) {
+  if (!isFinite(s)) return '–';
+  s = Math.ceil(s);
+  return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + String(s % 60).padStart(2, '0') + ' s';
+}
+
+// ---- Einstellungen ---------------------------------------------------------
+function bindSeg(id, key) {
+  const seg = $(id);
+  const sync = () => seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.v === state[key]));
+  seg.onclick = e => {
+    const v = +e.target.dataset.v;
+    if (!v) return;
+    state[key] = v; sync(); saveSettings(); settingsChanged(key);
+  };
+  sync();
+}
+
+async function settingsChanged(key) {
+  if (key === 'chunk' && state.payload) buildEncoder();
+  if (key === 'fps' && state.running) { stop(); start(); }
+  if (key === 'codes' && state.enc) drawFrame(false);
+  updateStats();
+}
+
+// ---- Datei -----------------------------------------------------------------
+async function setFile(file) {
+  if (!file) return;
+  stop();
+  state.file = file;
+  const data = new Uint8Array(await file.arrayBuffer());
+  state.payload = await QRS.packFile(file.name, file.type, data);
+  const packed = state.payload.length;
+  $('#fileInfo').innerHTML = '';
+  const name = document.createElement('div'); name.className = 'file'; name.textContent = file.name;
+  const meta = document.createElement('div'); meta.className = 'meta';
+  meta.textContent = fmtSize(file.size) + (packed < file.size * 0.95 ? ' · komprimiert ' + fmtSize(packed) : '');
+  $('#fileInfo').append(name, meta);
+  buildEncoder();
+  $('#startBtn').disabled = false;
+  start();
+}
+
+function buildEncoder() {
+  const wasRunning = state.running;
+  stop();
+  state.enc = new QRS.Encoder(state.payload, state.chunk, QRS.randomSession());
+  state.nextId = state.enc.k;
+  state.sent = 0;
+  drawFrame(false);
+  updateStats();
+  if (wasRunning) start();
+}
+
+// ---- Zeichnen --------------------------------------------------------------
+function makeQr(text) {
+  const qr = qrcode(0, 'L');
+  qr.addData(text, 'Alphanumeric');
+  qr.make();
+  return qr;
+}
+
+// Raster: 1 -> 1x1, 2 -> nebeneinander oder übereinander, 4 -> 2x2
+function layout(n, w, h) {
+  if (n === 1) return [1, 1];
+  if (n === 2) return w >= h ? [2, 1] : [1, 2];
+  return [2, 2];
+}
+
+function drawFrame(advance = true) {
+  const enc = state.enc;
+  if (!enc) return;
+  const stage = $('#stage');
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.floor(stage.clientWidth * dpr), H = Math.floor(stage.clientHeight * dpr);
+  const [cols, rows] = layout(state.codes, W, H);
+  const qrs = [];
+  for (let i = 0; i < state.codes; i++) {
+    const id = advance ? state.nextId++ : state.nextId + i;
+    qrs.push(makeQr(enc.frame(id)));
+  }
+  if (advance) state.sent += state.codes;
+  const n = qrs[0].getModuleCount(), cell = n + 2 * QUIET;
+  const scale = Math.max(1, Math.floor(Math.min(W / (cols * cell), H / (rows * cell))));
+  const cv = $('#cv');
+  const cw = cols * cell * scale, ch = rows * cell * scale;
+  if (cv.width !== cw || cv.height !== ch) {
+    cv.width = cw; cv.height = ch;
+    cv.style.width = cw / dpr + 'px'; cv.style.height = ch / dpr + 'px';
+  }
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);
+  ctx.fillStyle = '#000';
+  qrs.forEach((qr, i) => {
+    const ox = (i % cols) * cell * scale + QUIET * scale, oy = Math.floor(i / cols) * cell * scale + QUIET * scale;
+    for (let r = 0; r < n; r++) {
+      let run = -1;
+      for (let c = 0; c <= n; c++) {
+        const dark = c < n && qr.isDark(r, c);
+        if (dark && run < 0) run = c;
+        if (!dark && run >= 0) { ctx.fillRect(ox + run * scale, oy + r * scale, (c - run) * scale, scale); run = -1; }
+      }
+    }
+  });
+  cv.hidden = false;
+  $('#placeholder').hidden = true;
+  state.version = (n - 17) / 4;
+  if (advance) updateStats();
+}
+
+// ---- Steuerung -------------------------------------------------------------
+function start() {
+  if (!state.enc || state.running) return;
+  state.running = true;
+  state.timer = setInterval(drawFrame, 1000 / state.fps);
+  $('#startBtn').textContent = 'Pause';
+}
+function stop() {
+  state.running = false;
+  clearInterval(state.timer);
+  $('#startBtn').textContent = 'Senden starten';
+}
+
+function updateStats() {
+  $('#fpsVal').textContent = state.fps + ' / s';
+  const enc = state.enc;
+  if (!enc) return;
+  const perSec = state.codes * state.fps;
+  $('#stBlocks').textContent = enc.k;
+  $('#stSent').textContent = state.sent;
+  $('#stRate').textContent = fmtSize(perSec * state.chunk) + '/s';
+  $('#stEta').textContent = fmtTime(enc.k / perSec);
+}
+
+// ---- Events ----------------------------------------------------------------
+loadSettings();
+bindSeg('#codesSeg', 'codes');
+bindSeg('#chunkSeg', 'chunk');
+$('#fps').value = state.fps;
+$('#fps').oninput = e => { state.fps = +e.target.value; saveSettings(); settingsChanged('fps'); };
+updateStats();
+
+$('#drop').onclick = () => $('#fileInput').click();
+$('#fileInput').onchange = e => { setFile(e.target.files[0]); e.target.value = ''; };
+const drop = $('#drop');
+['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => { e.preventDefault(); setFile(e.dataTransfer.files[0]); });
+
+$('#startBtn').onclick = () => state.running ? stop() : start();
+$('#fullBtn').onclick = () => document.fullscreenElement ? document.exitFullscreen() : $('#main').requestFullscreen();
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); $('#startBtn').click(); }
+});
+new ResizeObserver(() => { if (state.enc) drawFrame(false); }).observe($('#stage'));
+</script>
+</body>
+</html>

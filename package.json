@@ -1,0 +1,23 @@
+{
+  "name": "qr-stream",
+  "version": "1.0.0",
+  "description": "Dateien per animierten QR-Codes vom PC aufs Handy übertragen",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "build": "node build.js",
+    "test": "node --test test/codec.test.js test/multi.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "jsqr": "^1.4.0",
+    "qrcode-generator": "^2.0.4",
+    "zxing-wasm": "^3.1.4"
+  },
+  "private": true
+}

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>QR-Stream E2E-Test</title>
+<style>
+body{margin:0;font:13px system-ui,sans-serif;display:grid;grid-template-columns:1fr 360px;height:100vh}
+iframe{border:0;width:100%;height:100%}
+#log{position:fixed;bottom:0;left:0;right:0;max-height:30vh;overflow:auto;background:#111;color:#0f0;font:12px monospace;margin:0;padding:8px}
+</style>
+</head>
+<body>
+<iframe id="s" src="../dist/sender.html"></iframe>
+<iframe id="r" src="../dist/receiver.html"></iframe>
+<pre id="log"></pre>
+<script>
+// Sender-Canvas -> simuliertes Kamerabild (verkleinert, geglättet) -> Empfänger.
+const log = m => { document.getElementById('log').textContent += m + '\n'; };
+
+async function run({ size = 50000, codes = 4, chunk = 500, camW = 1280, camH = 720, fill = 0.85, drop = 0 } = {}) {
+  const sw = document.getElementById('s').contentWindow;
+  const rw = document.getElementById('r').contentWindow;
+  rw.__test = true;
+  await rw.__receiver.initScanner();
+
+  sw.document.querySelector(`#codesSeg [data-v="${codes}"]`).click();
+  sw.document.querySelector(`#chunkSeg [data-v="${chunk}"]`).click();
+
+  const data = new Uint8Array(size);
+  for (let i = 0; i < size; i++) data[i] = (Math.random() * 256) | 0;
+  await sw.setFile(new sw.File([data], `test-${size}.bin`, { type: 'application/octet-stream' }));
+  if (sw.document.querySelector('#startBtn').textContent === 'Pause') sw.document.querySelector('#startBtn').click();
+
+  const cam = document.createElement('canvas');
+  cam.width = camW; cam.height = camH;
+  const ctx = cam.getContext('2d', { willReadFrequently: true });
+  const t0 = performance.now();
+  let frames = 0, codesSeen = 0;
+  const startDone = rw.__receiver.state().doneSession;
+  while (rw.__receiver.state().doneSession === startDone && frames < 5000) {
+    sw.drawFrame();
+    frames++;
+    if (Math.random() < drop) continue;
+    const src = sw.document.getElementById('cv');
+    const scale = Math.min(camW / src.width, camH / src.height) * fill;
+    const w = src.width * scale, h = src.height * scale;
+    ctx.fillStyle = '#777'; ctx.fillRect(0, 0, camW, camH);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(src, (camW - w) / 2, (camH - h) / 2, w, h);
+    codesSeen += await rw.__receiver.processImage(ctx.getImageData(0, 0, camW, camH));
+  }
+  const f = rw.__lastFile;
+  const same = f && f.data.length === data.length && f.data.every((b, i) => b === data[i]);
+  const res = { size, codes, chunk, camera: `${camW}x${camH}`, frames, codesSeen,
+    perFrame: +(codesSeen / frames).toFixed(2), ok: f?.ok, identical: same,
+    decodeMsPerFrame: +((performance.now() - t0) / frames).toFixed(1) };
+  log(JSON.stringify(res));
+  return res;
+}
+window.run = run;
+</script>
+</body>
+</html>
