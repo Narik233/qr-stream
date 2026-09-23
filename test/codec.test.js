@@ -17,7 +17,7 @@ function mulberry(seed) {
 
 // Simuliert einen Empfänger, der bei Paket `start` einsteigt und `loss` verliert.
 function transfer(payload, chunkSize, { start = 0, loss = 0, seed = 1 } = {}) {
-  const session = QRS.randomSession();
+  const session = Math.imul(seed, 2654435761) >>> 0; // deterministisch, damit der Test nicht flackert
   const enc = new QRS.Encoder(payload, chunkSize, session);
   const rnd = mulberry(seed);
   let dec = null, received = 0;
@@ -60,7 +60,8 @@ test('Fountain-Code: Übertragung mit Verlust und spätem Einstieg', () => {
       const payload = new Uint8Array(crypto.randomBytes(size));
       const r = transfer(payload, 500, { start, loss, seed: size + start });
       assert.deepStrictEqual(Buffer.from(r.data), Buffer.from(payload));
-      assert.ok(r.received <= r.k * 1.1 + 4, `zu viele Pakete: ${r.received} für k=${r.k}`);
+      // Zufällige GF(2)-Kombinationen: P(mehr als k + m Pakete) ~ 2^-m, daher +8 Reserve
+      assert.ok(r.received <= r.k * 1.1 + 8, `zu viele Pakete: ${r.received} für k=${r.k}`);
       rows.push(`${String(size).padStart(7)} B  k=${String(r.k).padStart(4)}  ` +
         `start=${String(start).padStart(5)} verlust=${loss}  -> ${r.received} Pakete ` +
         `(${(r.received / r.k).toFixed(2)}x)`);
